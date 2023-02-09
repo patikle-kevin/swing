@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+	PUBLIC "-//mybatis.org/DTD Mapper 3.0//EN"
+	"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+	
+<mapper namespace="com.patikle.swing.contents.greenbars.GreenBarsDao">
+	<select id="selectBars1DayList" parameterType="com.patikle.swing.contents.bars.BarsVo" resultType="com.patikle.swing.contents.bars.BarsVo">
+		SELECT 
+			*
+		FROM `dbpatikle`.`tb_bars_1day`
+		WHERE 
+			symbol = #{symbol}
+	</select>
+
+	<select id="selectTickerListByFloatShares" parameterType="com.patikle.swing.contents.bars.TickerVo" resultType="com.patikle.swing.contents.bars.TickerVo">
+        SELECT * FROM `dbpatikle`.`tb_ticker` 
+		WHERE #{floatShares} >= float_shares
+		-- AND float_shares > 0
+    </select>
+
+	<insert id="insertGreenBars" parameterType="java.util.List">
+		INSERT IGNORE INTO `dbpatikle`.`tb_bars_1day_green`(`symbol`,`t`,`o`,`h`,`l`,`c`,`v`,`n`,`vw`,`o_ha`,`h_ha`,`l_ha`,`c_ha`,`prev_t`,`prev_o`,`prev_h`,`prev_l`,`prev_c`,`prev_v`,`prev_n`,`prev_vw`,`prev_o_ha`,`prev_h_ha`,`prev_l_ha`,`prev_c_ha`)
+		VALUES
+		<foreach collection="list" index="index" item="vo" separator=",">
+		(
+			#{vo.symbol},
+			#{vo.t},
+			#{vo.o},
+			#{vo.h},
+			#{vo.l},
+			#{vo.c},
+			#{vo.v},
+			#{vo.n},
+			#{vo.vw},
+			#{vo.o_ha},
+			#{vo.h_ha},
+			#{vo.l_ha},
+			#{vo.c_ha},
+			#{vo.prev_t},
+			#{vo.prev_o},
+			#{vo.prev_h},
+			#{vo.prev_l},
+			#{vo.prev_c},
+			#{vo.prev_v},
+			#{vo.prev_n},
+			#{vo.prev_vw},
+			#{vo.prev_o_ha},
+			#{vo.prev_h_ha},
+			#{vo.prev_l_ha},
+			#{vo.prev_c_ha}
+		)
+		</foreach>
+	</insert>
+
+	<delete id="deleteGreenBars" parameterType="String">
+		DELETE FROM `dbpatikle`.`tb_ticker` WHERE `symbol` = #{symbol}
+	</delete>
+
+</mapper>
+

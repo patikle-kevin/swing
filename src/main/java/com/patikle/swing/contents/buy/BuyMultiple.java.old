@@ -1,0 +1,886 @@
+package com.patikle.swing.contents.buy;
+
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.ibatis.session.SqlSession;
+import org.apache.tomcat.jni.Local;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import com.patikle.swing.contents.bars.Bars;
+import com.patikle.swing.contents.bars.BarsVo;
+import com.patikle.swing.contents.code.CodeDao;
+import com.patikle.swing.contents.code.CodeVo;
+import com.patikle.swing.contents.util.APIRequestService;
+
+@Component
+public class BuyMultiple {
+
+	private final int BEFORE_PURCHASE = 0; 
+	private final int FIRST_PURCHASE = 1;
+	private final int SECOND_PURCHASE = 2;
+	private final int THIRD_PURCHASE = 3;
+
+	
+	@Autowired
+	SqlSession sqlSession;
+
+	@Autowired
+	APIRequestService apiRequestService;
+	
+	@Autowired
+	Bars bars; 
+
+	@Autowired
+	BuyService buyService;
+	
+	@SuppressWarnings("unchecked")
+	private List<Map<String, Object>> getBarData(String symbol, String start, String end){
+		StringBuilder sb = new StringBuilder("https://data.alpaca.markets/v2/stocks/");
+		sb.append(symbol);
+		sb.append("/bars?adjustment=split");
+		// sb.append("/bars?");
+		sb.append("&timeframe=1min");
+		sb.append("&limit=10000");
+		sb.append("&start=" + start);
+		sb.append("&end=" + end);
+		CodeVo vo = new CodeVo("alpaca.market.apikey");
+		vo = sqlSession.getMapper(CodeDao.class).selectCode(vo);
+		String apiKey =  vo.getKeyValue();
+		vo.setKeyName("alpaca.market.secretkey");
+		vo = sqlSession.getMapper(CodeDao.class).selectCode(vo);
+		String secretkey = vo.getKeyValue();
+		Map<String, Object> result = apiRequestService.get(sb.toString(), Map.class, apiKey, secretkey);
+		return (List<Map<String, Object>>)result.get("bars");
+    }
+
+	private boolean tryFirstBuy(TradeResultVo tradeResultVo, BuyVo base, BarsVo vo, double money){
+		if(base.getCountBought1st() == 0){
+			tradeResultVo.setBuy1st(base.getBuy1st());
+			tradeResultVo.setBuy1stDate(vo.getTFormattedString());
+			tradeResultVo.setFirstBuyDate(vo.getTFormattedString());
+			tradeResultVo.setRound(1);
+			base.setCountBought1st(base.getCountBought1st()+1);
+			base.setPurchase(FIRST_PURCHASE);
+			double count = money / tradeResultVo.getBuy1st().doubleValue();
+			tradeResultVo.setBuy1stCount((int)count);
+			return true;
+		}
+		return false;
+	}
+
+	private boolean trySecondBuy(TradeResultVo tradeResultVo, BuyVo base, BarsVo vo, double money){
+		if(vo.getL().compareTo(base.getBuy2nd()) <= 0){
+			if(base.getCountBought2nd() == 0){
+				tradeResultVo.setBuy2nd(base.getBuy2nd());
+				tradeResultVo.setBuy2ndDate(vo.getTFormattedString());
+				tradeResultVo.setRound(2);
+				base.setCountBought2nd(base.getCountBought2nd()+1);
+				base.setPurchase(SECOND_PURCHASE);
+
+				double count = money / tradeResultVo.getBuy2nd().doubleValue();
+				tradeResultVo.setBuy2ndCount((int)count);
+				return true;
+			}
+		}
+		return false;
+	}
+	private boolean tryThirdBuy(TradeResultVo tradeResultVo, BuyVo base, BarsVo vo, double money){
+		if(vo.getL().compareTo(base.getBuy3rd()) <= 0){
+			if(base.getCountBought3rd() == 0){
+				tradeResultVo.setBuy3rd(base.getBuy3rd());
+				tradeResultVo.setBuy3rdDate(vo.getTFormattedString());
+				tradeResultVo.setRound(3);
+				base.setCountBought3rd(base.getCountBought3rd()+1);
+				base.setPurchase(THIRD_PURCHASE);
+				double count = money / tradeResultVo.getBuy3rd().doubleValue();
+				tradeResultVo.setBuy3rdCount((int)count);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean tryFirstSell(TradeResultVo tradeResultVo, BuyVo base, BarsVo vo){
+		if(vo.getH().compareTo(base.getSell1st()) >= 0){
+			tradeResultVo.setSell1st(base.getSell1st());
+			tradeResultVo.setSell1stDate(vo.getTFormattedString());
+			tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+			tradeResultVo.setBuyAndSellPeriod(base.getPercent());
+			tradeResultVo.setSuccess(true);
+			return true;
+		}
+		return false;
+	}
+	private boolean trySecondSell(TradeResultVo tradeResultVo, BuyVo base, BarsVo vo){
+		if(vo.getH().compareTo(base.getSell2nd()) >= 0){
+			tradeResultVo.setSell2nd(base.getSell2nd());
+			tradeResultVo.setSell2ndDate(vo.getTFormattedString());
+			tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+			tradeResultVo.setBuyAndSellPeriod(getRate(tradeResultVo));
+			tradeResultVo.setSuccess(true);
+			return true;
+		}
+		return false;
+	}
+
+	private boolean tryThirdSell(TradeResultVo tradeResultVo, BuyVo base, BarsVo vo){
+		if(vo.getH().compareTo(base.getSell3rd()) >= 0){
+			tradeResultVo.setSell3rd(base.getSell3rd());
+			tradeResultVo.setSell3rdDate(vo.getTFormattedString());
+			base.setPurchase(SECOND_PURCHASE); 
+			return true;
+		}
+		return false;
+	}
+
+	private double getRate(TradeResultVo tradeResultVo){
+		if(tradeResultVo.getRound() == 3){
+			BigDecimal avg = tradeResultVo.getBuy1st().multiply(BigDecimal.valueOf(0.25))
+			.add(tradeResultVo.getBuy2nd().multiply(BigDecimal.valueOf(0.25)))
+			.add(tradeResultVo.getBuy3rd().multiply(BigDecimal.valueOf(0.5)));
+			double a = tradeResultVo.getBuy2nd().subtract(avg).multiply(BigDecimal.valueOf(0.5)).doubleValue();
+			double b = tradeResultVo.getBuy1st().subtract(avg).multiply(BigDecimal.valueOf(0.5)).doubleValue();
+			return (a+b) / avg.doubleValue() * 100;
+
+		}else{
+			BigDecimal avg = tradeResultVo.getBuy1st().multiply(BigDecimal.valueOf(0.5))
+			.add(tradeResultVo.getBuy2nd().multiply(BigDecimal.valueOf(0.5)));
+			double price = tradeResultVo.getSell2nd().subtract(avg).doubleValue();
+			return price / avg.doubleValue() * 100;
+		}
+	}
+
+	public TradeResultVo run(List<BarsVo> list, int baseIndex, BuyVo base, double money, double cumulativeProceeds){
+		// double cumulativeProceeds = 0;
+
+		double twentyFive = money / 4;
+		double fifty = money / 2; 
+		TradeResultVo tradeResultVo = new TradeResultVo(base.getSymbol());
+				
+		String log = "[" + base.getSymbol() +"], ";
+		int dur = 0;
+		FOR_1:
+		for(int i = baseIndex ; i < list.size() ; i++){
+			BarsVo bar = list.get(i);
+			String start = bar.getT().substring(0, 10) + "T04:00:00Z";
+			String end = bar.getT().substring(0, 10) + "T23:59:00Z";
+			
+			if(base.getPurchase() == BEFORE_PURCHASE){
+				if(bar.getL().compareTo(base.getBuy1st()) <= 0){
+					List<Map<String, Object>> bars = getBarData(base.getSymbol(), start, end);
+					if(bars != null){
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+							if(base.getPurchase() == BEFORE_PURCHASE){
+								if(vo.getL().compareTo(base.getBuy1st()) <= 0){
+									tryFirstBuy(tradeResultVo, base, vo, twentyFive);
+									// 1분봉 안에 매수 매도 구간이 겹쳐져 있다.
+									if(tryFirstSell(tradeResultVo, base, vo)){
+										break FOR_1;
+									}
+									trySecondBuy(tradeResultVo, base, vo, twentyFive);
+									tryThirdBuy(tradeResultVo, base, vo, fifty);
+								}
+							}else{
+								if(base.getPurchase() == FIRST_PURCHASE){
+									if(tryFirstSell(tradeResultVo, base, vo)){
+										break FOR_1;
+									}
+									trySecondBuy(tradeResultVo, base, vo, twentyFive);
+									tryThirdBuy(tradeResultVo, base, vo, fifty);
+	
+								}else if(base.getPurchase() == SECOND_PURCHASE){
+									if(trySecondSell(tradeResultVo, base, vo)){
+										break FOR_1;
+									}
+									tryThirdBuy(tradeResultVo, base, vo, fifty);
+	
+								}else if(base.getPurchase() == THIRD_PURCHASE){
+									tryThirdSell(tradeResultVo, base, vo);
+								}
+							}
+						}
+					}
+				}
+			}else if(base.getPurchase() == FIRST_PURCHASE){
+				List<Map<String, Object>> bars = null;
+				int count = tradeResultVo.getBuy1stCount();
+				
+				// Low 로 팔았을 경우 원금(25%)을 뺀 나머지 금액
+				double proceeds = (bar.getL().doubleValue() * count) - twentyFive;
+
+				// 첫거래 시 수익금이 없으므로.. 있다고치고..
+				if(cumulativeProceeds == 0){
+					double buyMoney = count * base.getBuy1st().doubleValue();
+					double sellMoney = count * base.getSell1st().doubleValue();
+					cumulativeProceeds = sellMoney - buyMoney;
+				}
+
+				int stopLossIndex = 0;
+				boolean isStopLoss = false;
+				//  누적 수익 보다 현재 손해(손해는 마이너스) 가 크면 문제임
+				if(proceeds < 0 && cumulativeProceeds < Math.abs(proceeds)){
+					bars = getBarData(base.getSymbol(), start, end);
+					if(bars != null){
+						FOR_2:
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+							proceeds = (vo.getL().doubleValue() * count) - twentyFive;
+							if(proceeds < 0 && cumulativeProceeds < Math.abs(proceeds)){
+								// System.out.println("========================== 손절 할 수도 있었다. 11111");
+								stopLossIndex = j;
+								isStopLoss = true;
+								break FOR_2;
+							}
+						}
+					}
+				}
+
+				if(bar.getH().compareTo(base.getSell1st()) >= 0){
+					if(bars == null){
+						bars = getBarData(base.getSymbol(), start, end);
+					}
+					
+					if(bars != null){
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+							
+							// 손절 타임이 먼저왔다
+							if(isStopLoss == true && stopLossIndex == j){
+								tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+								tradeResultVo.setSuccess(true);
+								tradeResultVo.setStoploss(true);
+								cumulativeProceeds = 0;
+								break FOR_1;
+							}
+
+							if(base.getPurchase() == FIRST_PURCHASE){
+								if(tryFirstSell(tradeResultVo, base, vo)){
+									break FOR_1;
+								}
+								trySecondBuy(tradeResultVo, base, vo, twentyFive);
+								tryThirdBuy(tradeResultVo, base, vo, fifty);
+							}else if(base.getPurchase() == SECOND_PURCHASE){
+								if(trySecondSell(tradeResultVo, base, vo)){
+									break FOR_1;
+								}
+								trySecondBuy(tradeResultVo, base, vo, twentyFive);
+								tryThirdBuy(tradeResultVo, base, vo, fifty);
+							}else if(base.getPurchase() == THIRD_PURCHASE){
+								tryThirdSell(tradeResultVo, base, vo);
+							}
+						}
+					}
+				}else if(bar.getL().compareTo(base.getBuy2nd()) <= 0 && base.getCountBought2nd() == 0){
+					if(bars == null){
+						bars = getBarData(base.getSymbol(), start, end);
+					}
+					if(bars != null){
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+
+							// 손절 타임이 먼저왔다
+							if(isStopLoss == true && stopLossIndex == j){
+								tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+								tradeResultVo.setSuccess(true);
+								tradeResultVo.setStoploss(true);
+								cumulativeProceeds = 0;
+								break FOR_1;
+							}
+
+							if(base.getPurchase() == FIRST_PURCHASE){
+								trySecondBuy(tradeResultVo, base, vo, twentyFive);
+								tryThirdBuy(tradeResultVo, base, vo, fifty);
+							}else if(base.getPurchase() == SECOND_PURCHASE){
+								if(trySecondSell(tradeResultVo, base, vo)){
+									break FOR_1;
+								}
+								tryThirdBuy(tradeResultVo, base, vo, fifty);
+							}else if(base.getPurchase() == THIRD_PURCHASE){
+								tryThirdSell(tradeResultVo, base, vo);
+							}
+						}
+					}
+				}else{
+					if(bars != null){
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+							proceeds = (vo.getL().doubleValue() * count) - twentyFive;
+							if(proceeds < 0 && cumulativeProceeds < Math.abs(proceeds)){
+								tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+								tradeResultVo.setSuccess(true);
+								tradeResultVo.setStoploss(true);
+								cumulativeProceeds = 0;				
+								break FOR_1;
+							}
+						}
+					}
+				}
+			}else if(base.getPurchase() == SECOND_PURCHASE){
+				List<Map<String, Object>> bars = null;
+				int count = tradeResultVo.getBuy1stCount() + tradeResultVo.getBuy2ndCount() + tradeResultVo.getBuy3rdCount();
+				
+				// Low 로 팔았을 경우 원금을 뺀 나머지 금액
+				// 3차 까지 구매 한 경우는 원금이 100% 들어갔다
+				double proceeds = 0;
+				if( tradeResultVo.getBuy3rdCount() >0){
+					proceeds = (bar.getL().doubleValue() * count) - money;
+				}else{
+					proceeds = (bar.getL().doubleValue() * count) - fifty;
+				}
+				// 수익금이 없는경우.. 있다고치고..
+				if(cumulativeProceeds == 0){
+					double buyMoney1st = tradeResultVo.getBuy1stCount() * base.getBuy1st().doubleValue();
+					double buyMoney2nd = tradeResultVo.getBuy2ndCount() * base.getBuy2nd().doubleValue();
+					double sellMoney = count * base.getSell2nd().doubleValue();
+					cumulativeProceeds = sellMoney - (buyMoney1st+buyMoney2nd);
+				}
+
+				int stopLossIndex = 0;
+				boolean isStopLoss = false;
+				//  누적 수익 보다 현재 손해(손해는 마이너스) 가 크면 문제임
+				if(proceeds < 0 && cumulativeProceeds < Math.abs(proceeds)){
+					bars = getBarData(base.getSymbol(), start, end);
+					if(bars != null){
+						FOR_2:
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+							if( tradeResultVo.getBuy3rdCount() >0){
+								proceeds = (vo.getL().doubleValue() * count) - money;
+							}else{
+								proceeds = (vo.getL().doubleValue() * count) - fifty;
+							}
+							if(proceeds < 0 && cumulativeProceeds < Math.abs(proceeds)){
+								// System.out.println("========================== 손절 할 수도 있었다. 22222");
+								stopLossIndex = j;
+								isStopLoss = true;
+								break FOR_2;
+							}
+						}
+					}
+				}
+
+				if(bar.getH().compareTo(base.getSell2nd()) >= 0){
+					if(bars == null){
+						bars = getBarData(base.getSymbol(), start, end);
+					}
+					if(bars != null){
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+
+							// 손절 타임이 먼저왔다
+							if(isStopLoss == true && stopLossIndex == j){
+								tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+								tradeResultVo.setSuccess(true);
+								tradeResultVo.setStoploss(true);
+								cumulativeProceeds = 0;
+								break FOR_1;
+							}
+
+							if(base.getPurchase() == SECOND_PURCHASE){
+								if(trySecondSell(tradeResultVo, base, vo)){
+									break FOR_1;
+								}
+								tryThirdBuy(tradeResultVo, base, vo, fifty);
+							}else if(base.getPurchase() == THIRD_PURCHASE){
+								tryThirdSell(tradeResultVo, base, vo);
+							}
+						}
+					}
+					
+				}else if(bar.getL().compareTo(base.getBuy3rd()) <= 0 && base.getCountBought3rd() == 0){
+					if(bars == null){
+						bars = getBarData(base.getSymbol(), start, end);
+					}
+					if(bars != null){
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+
+							// 손절 타임이 먼저왔다
+							if(isStopLoss == true && stopLossIndex == j){
+								tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+								tradeResultVo.setSuccess(true);
+								tradeResultVo.setStoploss(true);
+								cumulativeProceeds = 0;
+								break FOR_1;
+							}
+
+							if(base.getPurchase() == SECOND_PURCHASE){
+								tryThirdBuy(tradeResultVo, base, vo, fifty);
+							}else if(base.getPurchase() == THIRD_PURCHASE){
+								tryThirdSell(tradeResultVo, base, vo);
+							}
+						}
+					}
+				}
+				else{
+					if(bars != null){
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+							
+							if( tradeResultVo.getBuy3rdCount() >0){
+								proceeds = (vo.getL().doubleValue() * count) - money;
+							}else{
+								proceeds = (vo.getL().doubleValue() * count) - fifty;
+							}
+
+							if(proceeds < 0 && cumulativeProceeds < Math.abs(proceeds)){
+								tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+								tradeResultVo.setSuccess(true);
+								tradeResultVo.setStoploss(true);
+								cumulativeProceeds = 0;				
+								break FOR_1;
+							}
+						}
+					}
+				}
+			}else if(base.getPurchase() == THIRD_PURCHASE){
+				List<Map<String, Object>> bars = null;
+				int count = tradeResultVo.getBuy1stCount() + tradeResultVo.getBuy2ndCount() + tradeResultVo.getBuy3rdCount();
+				
+				// Low 로 팔았을 경우 원금을 뺀 나머지 금액
+				double proceeds = (bar.getL().doubleValue() * count) - money;
+
+				// 수익금이 없는경우.. 있다고치고..
+				if(cumulativeProceeds == 0){
+					double buyMoney1st = tradeResultVo.getBuy1stCount() * base.getBuy1st().doubleValue();
+					double buyMoney2nd = tradeResultVo.getBuy2ndCount() * base.getBuy2nd().doubleValue();
+					double buyMoney3rd = tradeResultVo.getBuy3rdCount() * base.getBuy3rd().doubleValue();
+					double sellMoney = count * base.getSell3rd().doubleValue();
+					cumulativeProceeds = sellMoney - (buyMoney1st+buyMoney2nd+buyMoney3rd);
+				}
+
+				int stopLossIndex = 0;
+				boolean isStopLoss = false;
+				//  누적 수익 보다 현재 손해(손해는 마이너스) 가 크면 문제임
+				if(proceeds < 0 && cumulativeProceeds < Math.abs(proceeds)){
+					bars = getBarData(base.getSymbol(), start, end);
+					if(bars != null){
+						FOR_2:
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+							// proceeds = twentyFive - (vo.getL().doubleValue() * count);
+							proceeds = (bar.getL().doubleValue() * count) - money;
+							if(proceeds < 0 && cumulativeProceeds < Math.abs(proceeds)){
+								// System.out.println("========================== 손절 할 수도 있었다. 33333");
+								stopLossIndex = j;
+								isStopLoss = true;
+								break FOR_2;
+							}
+						}
+					}
+				}
+
+				if(bar.getH().compareTo(base.getSell3rd()) >= 0){
+					if(bars == null){
+						bars = getBarData(base.getSymbol(), start, end);
+					}
+					if(bars != null){
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+
+							// 손절 타임이 먼저왔다
+							if(isStopLoss == true && stopLossIndex == j){
+								tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+								tradeResultVo.setSuccess(true);
+								tradeResultVo.setStoploss(true);
+								cumulativeProceeds = 0;
+								break FOR_1;
+							}
+
+							if(base.getPurchase() == SECOND_PURCHASE){
+								if(trySecondSell(tradeResultVo, base, vo)){
+									break FOR_1;
+								}
+							}else if(base.getPurchase() == THIRD_PURCHASE){
+								tryThirdSell(tradeResultVo, base, vo);
+							}
+						}
+					}
+				}else{
+					if(bars != null){
+						for(int j = 0; j < bars.size() ; j++){
+							bars.get(j).put("symbol", base.getSymbol());
+							BarsVo vo  = new BarsVo(bars.get(j));
+							// proceeds = twentyFive - (vo.getL().doubleValue() * count);
+
+							proceeds = (bar.getL().doubleValue() * count) - money;
+							if(proceeds < 0 && cumulativeProceeds < Math.abs(proceeds)){
+								tradeResultVo.setFinalSellDate(vo.getTFormattedString());
+								tradeResultVo.setSuccess(true);
+								tradeResultVo.setStoploss(true);
+								cumulativeProceeds = 0;				
+								break FOR_1;
+							}
+						}
+					}
+				}
+			}
+			dur++;
+		}
+		if(log.indexOf("매도") != -1){
+			System.out.println( "매수매도 기간 :" + dur + ","+ log);
+		}
+		return tradeResultVo;
+	}
+
+
+	public int getNextTradeItemIndex(List<BuyVo> list, LocalDateTime finalSellDate){
+		int index = 0;
+		LocalDateTime proximateDateTime = LocalDateTime.now();
+		for(int i = 0 ; i < list.size() ; i++){
+			BuyVo item = list.get(i);
+			if(!item.isComplete()){
+				List<BarsVo> bars = buyService.selectTbBarsOneDayListBySymbol(item.getSymbol());
+				LOOP:
+				for(int j = 0 ; j < bars.size() ; j++){
+					BarsVo bar = bars.get(j);
+					LocalDateTime datetime = LocalDateTime.parse(bar.getT(), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+					if(finalSellDate.isAfter(datetime)){
+						if(bar.getL().compareTo(item.getBuy1st()) <= 0){
+							if(proximateDateTime.isBefore(datetime)){
+								index = i;
+								proximateDateTime = datetime;
+							}
+							break LOOP;
+						}
+					}
+				}
+			}
+
+
+			
+			// if(!item.isComplete()){
+			// 	if(item.getL().compareTo(base.getBuy1st()) <= 0){
+			// 		LocalDateTime datetime = LocalDateTime.parse(bars.getT(), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+			// 		if(finalSellDate.isAfter(datetime)){
+			// 			System.out.println(datetime);
+			// 			item.setComplete(true);
+			// 			break;
+			// 		}
+			// 	}
+			// }
+		}
+		return index;
+
+		// return item;
+	}
+
+	public void run(){
+		List<BuyVo> list = buyService.selectTbBarsOneDayGreenList();
+		// System.out.println("종목,성공여부,추가매수횟수,예상수익율,매수일,매도일,1차 매수일,1차 매수금액,1차 매도일,1차 매도금액,2차 매수일,2차 매수금액,2차 매도일,2차 매도금액,3차 매수일,3차 매수금액,3차 매도일,3차 매도금액");
+		// System.out.println(list.size());
+		List<TradeResultVo> tradeResultVos = new ArrayList<>();
+
+		double cumulativeProceeds = 0;
+
+		String finalSellDate = "";
+		for(int i = 0 ; i < list.size() ; i++){
+			BuyVo item = list.get(i);
+
+
+			// if(item.getSymbol().equals("AWX") || item.getSymbol().equals("BPTH")){
+
+				List<BarsVo> bars = buyService.selectTbBarsOneDayListBySymbol(item.getSymbol());
+
+				int baseIndex = 0;
+				BarsVo tMinusOneBar = new BarsVo();
+				BarsVo tMinusZeroBar = new BarsVo();
+				
+
+				double money = 100000;
+				for(int k = 0 ; k < bars.size() ; k++){
+					if(bars.get(k).getT().equals(item.getT())){
+						baseIndex = k+1;
+						tMinusOneBar = bars.get(k-1);
+						tMinusZeroBar = bars.get(k);
+						break;
+					}
+				}
+
+				// t-1이 양봉일 경우만실행한다
+				if(tMinusOneBar.getO_ha().compareTo(tMinusOneBar.getC_ha()) <= 0){
+					// 전략선 설정
+					item.setSell2nd(item.getBuy1st());
+					item.setBuy2nd(tMinusZeroBar.getO_ha());
+					item.setSell3rd(tMinusZeroBar.getO_ha());
+					item.setBuy3rd(tMinusOneBar.getO_ha());
+					// tradeResultVos.add(run(bars, baseIndex, item, 100000));
+					
+					// System.out.println("======================================= " + item.getSymbol() + " ( " +(i+1) + "/"+ list.size()+") 추가됨 =======================================");
+					// count++;
+
+					TradeResultVo tradeResultVo = run(bars, baseIndex, item, money, cumulativeProceeds);
+					
+					String str = tradeResultVo.getSymbol() + " > " + tradeResultVo.isSuccess() + " >>>> ";
+					if(tradeResultVo.isSuccess()){
+						if(tradeResultVo.isStoploss()){
+							str += "  STOP LOSS  ";
+							cumulativeProceeds = 0;
+						}else{
+							if(tradeResultVo.getBuy3rdCount() > 0){
+								// 3차 까지 왔음
+								// 2차 매수 가격으로 전체 매도
+								double sell = tradeResultVo.getSell3rd().doubleValue() * (tradeResultVo.getBuy1stCount() + tradeResultVo.getBuy2ndCount() + tradeResultVo.getBuy3rdCount());
+								double buy1st = tradeResultVo.getBuy1stCount() * tradeResultVo.getBuy1st().doubleValue();
+								double buy2nd = tradeResultVo.getBuy2ndCount() * tradeResultVo.getBuy2nd().doubleValue();
+								double buy3rd = tradeResultVo.getBuy3rdCount() * tradeResultVo.getBuy3rd().doubleValue();
+								double buy = buy1st + buy2nd + buy3rd;
+								str += buy + " 에 구매, " + sell +" 에 판매";
+								cumulativeProceeds += sell - buy;
+							}else if(tradeResultVo.getBuy2ndCount() > 0){
+								// 2차 까지 왔음
+								// 1차 매수 가격으로 전체 매도
+								if(item.getSymbol().equals("DWAC")){
+									System.out.println("일단 멈춤");
+								}
+								double sell = tradeResultVo.getSell2nd().doubleValue() * (tradeResultVo.getBuy1stCount() + tradeResultVo.getBuy2ndCount());
+								double buy1st = tradeResultVo.getBuy1stCount() * tradeResultVo.getBuy1st().doubleValue();
+								double buy2nd = tradeResultVo.getBuy2ndCount() * tradeResultVo.getBuy2nd().doubleValue();
+								double buy = buy1st + buy2nd;
+								str += buy + " 에 구매, " + sell +" 에 판매";
+								cumulativeProceeds += sell - buy;
+							}else if(tradeResultVo.getBuy1stCount() > 0){
+								// 1차 까지 왔음
+								// 1차 매도 가격으로 전체 매도
+								double sell = tradeResultVo.getSell1st().doubleValue() * tradeResultVo.getBuy1stCount();
+								double buy1st = tradeResultVo.getBuy1stCount() * tradeResultVo.getBuy1st().doubleValue();
+								double buy = buy1st;
+								str += buy + " 에 구매, " + sell +" 에 판매";
+								cumulativeProceeds += sell - buy;
+							}
+						}
+						str += " 거래일 >> " + tradeResultVo.getFirstBuyDate() + " ~ " + tradeResultVo.getFinalSellDate();
+						finalSellDate = tradeResultVo.getFinalSellDate();
+					}
+					System.out.println(str + " ====== 현재까지 누적수익은: " + cumulativeProceeds);
+				}
+
+
+			// }
+			//if( i == 10) break;
+			// break;
+		}
+		System.out.println("총 수익은:" + cumulativeProceeds);
+
+		/* List<BuyVo> lBuyVos = buyService.selectTbBarsOneDayGreenListWithoutVolumeSize();
+		
+		for(int j = 0 ; j < lBuyVos.size() ; j++){
+			BuyVo item = lBuyVos.get(j);
+
+			List<BarsVo> bars = buyService.selectTbBarsOneDayListBySymbol(item.getSymbol());
+			int baseIndex = 0;
+			BarsVo tMinusOneBar = new BarsVo();
+			BarsVo tMinusZeroBar = new BarsVo();
+			
+			for(int k = 0 ; k < bars.size() ; k++){
+				if(bars.get(k).getT().equals(item.getT())){
+					baseIndex = k+1;
+					tMinusOneBar = bars.get(k-1);
+					tMinusZeroBar = bars.get(k);
+					break;
+				}
+			}
+			// t-1이 양봉일 경우만실행한다
+			if(tMinusOneBar.getO_ha().compareTo(tMinusOneBar.getC_ha()) <= 0){
+				// 전략선 설정
+				item.setSell2nd(item.getBuy1st());
+				item.setBuy2nd(tMinusZeroBar.getO_ha());
+				item.setSell3rd(tMinusZeroBar.getO_ha());
+				item.setBuy3rd(tMinusOneBar.getO_ha());
+				tradeResultVos.add(run(bars, baseIndex, item));
+				System.out.println("======================================= " + item.getSymbol() + " ( " +(j+1) + "/"+ lBuyVos.size()+") 추가됨 =======================================");
+				// count++;
+			}
+		}
+ */
+		// 1. 파일 객체 생성
+		// File file = new File("/home/patikle/stock/log/logging2.txt");
+		// FileWriter fw = null;
+		// BufferedWriter writer = null;
+		/* try{
+			// if (!file.exists()) {
+				// file.createNewFile();
+			// }
+			// 3. Buffer를 사용해서 File에 write할 수 있는 BufferedWriter 생성
+			// fw = new FileWriter(file);
+			// writer = new BufferedWriter(fw);
+			
+			for(int k = 0 ; k < tradeResultVos.size() ; k++){
+				StringBuilder sb = new StringBuilder();
+				TradeResultVo item = tradeResultVos.get(k);
+				sb.append(item.getSymbol()).append(","); // 종목
+				sb.append(item.isSuccess()).append(","); // 성공여부
+				sb.append(item.getRound()).append(","); // 추가매수 횟수
+				sb.append(item.getBuyAndSellPeriod()).append(","); //  예상수익율
+				sb.append(item.getFirstBuyDate()).append(","); // 매수일
+				sb.append(item.getFinalSellDate()).append(","); // 매도일
+
+				if(item.getBuy3rdCount() > 0){
+					// 3차 까지 왔음
+					// 2차 매수 가격으로 전체 매도
+					double sell = item.getSell3rd().doubleValue() * (item.getBuy1stCount() + item.getBuy2ndCount() + item.getBuy3rdCount());
+					double buy1st = item.getBuy1stCount() * item.getBuy1st().doubleValue();
+					double buy2nd = item.getBuy2ndCount() * item.getBuy2nd().doubleValue();
+					double buy3rd = item.getBuy3rdCount() * item.getBuy3rd().doubleValue();
+					double buy = buy1st + buy2nd + buy3rd;
+					sb.append(buy + " 에 구매, " + sell +" 에 판매");
+				}else if(item.getBuy2ndCount() > 0){
+					// 2차 까지 왔음
+					// 1차 매수 가격으로 전체 매도
+					double sell = item.getSell2nd().doubleValue() * (item.getBuy1stCount() + item.getBuy2ndCount());
+					double buy1st = item.getBuy1stCount() * item.getBuy1st().doubleValue();
+					double buy2nd = item.getBuy2ndCount() * item.getBuy2nd().doubleValue();
+					double buy = buy1st + buy2nd;
+					sb.append(buy + " 에 구매, " + sell +" 에 판매");
+				}else if(item.getBuy1stCount() > 0){
+					// 1차 까지 왔음
+					// 1차 매도 가격으로 전체 매도
+					double sell = item.getSell1st().doubleValue() * item.getBuy1stCount();
+					double buy1st = item.getBuy1stCount() * item.getBuy1st().doubleValue();
+					double buy = buy1st;
+					sb.append(buy + " 에 구매, " + sell +" 에 판매");
+				}
+
+				// double m1 = item.getBuy1stCount() * item.getBuy1st().doubleValue();
+				// double m2 = item.getBuy2ndCount() * item.getBuy2nd().doubleValue();
+				// double m3 = item.getBuy3rdCount() * item.getBuy3rd().doubleValue();
+				// sb.append("1차 금액: " + m1 + ", ");
+				// sb.append("2차 금액: " + m2 + ", ");
+				// sb.append("3차 금액: " + m3);
+
+
+				// sb.append(item.getBuy1stDate()).append(","); // 1 차매수일
+				// sb.append(item.getBuy1st()).append(","); // 1차 매수 금액
+				// sb.append(item.getSell1stDate()).append(","); // 1차 매도일
+				// sb.append(item.getSell1st()).append(","); // 1차 매도 금액
+
+				// sb.append(item.getBuy2ndDate()).append(","); // 2차 매수일
+				// sb.append(item.getBuy2nd()).append(","); // 2차 매수 금액
+				// sb.append(item.getSell2ndDate()).append(","); // 2차 매도일
+				// sb.append(item.getSell2nd()).append(","); // 2차 매도 금액
+
+				// sb.append(item.getBuy3rdDate()).append(","); // 3차 매수일
+				// sb.append(item.getBuy3rd()).append(","); // 3차 매수 금액
+				// sb.append(item.getSell3rdDate()).append(","); // 3차 매도일
+				// sb.append(item.getSell3rd()); // 3차 매도 금액
+				// sb.append("\n");
+
+
+				System.out.println(sb.toString());
+				// writer.write(sb.toString());
+			}
+			// writer.close();
+			// fw.close();
+		}catch(Exception e){
+			System.out.println(e.getMessage());
+		} */
+		// System.out.println(">>>>>>> 실행 된 전략 수: " + count);
+	}
+
+
+	/* public void run(){
+		// List<BuyVo> list = buyService.selectTbBarsOneDayGreenList();
+		System.out.println("종목,성공여부,추가매수횟수,예상수익율,매수일,매도일,1차 매수일,1차 매수금액,1차 매도일,1차 매도금액,2차 매수일,2차 매수금액,2차 매도일,2차 매도금액,3차 매수일,3차 매수금액,3차 매도일,3차 매도금액");
+
+		List<BuyVo> lBuyVos = buyService.selectTbBarsOneDayGreenListWithoutVolumeSize();
+		List<TradeResultVo> tradeResultVos = new ArrayList<>();
+		for(int j = 0 ; j < lBuyVos.size() ; j++){
+			BuyVo item = lBuyVos.get(j);
+
+			List<BarsVo> bars = buyService.selectTbBarsOneDayListBySymbol(item.getSymbol());
+			int baseIndex = 0;
+			BarsVo tMinusOneBar = new BarsVo();
+			BarsVo tMinusZeroBar = new BarsVo();
+			
+			for(int k = 0 ; k < bars.size() ; k++){
+				if(bars.get(k).getT().equals(item.getT())){
+					baseIndex = k+1;
+					tMinusOneBar = bars.get(k-1);
+					tMinusZeroBar = bars.get(k);
+					break;
+				}
+			}
+			// t-1이 양봉일 경우만실행한다
+			if(tMinusOneBar.getO_ha().compareTo(tMinusOneBar.getC_ha()) <= 0){
+				// 전략선 설정
+				item.setSell2nd(item.getBuy1st());
+				item.setBuy2nd(tMinusZeroBar.getO_ha());
+				item.setSell3rd(tMinusZeroBar.getO_ha());
+				item.setBuy3rd(tMinusOneBar.getO_ha());
+				tradeResultVos.add(run(bars, baseIndex, item));
+				System.out.println("======================================= " + item.getSymbol() + " ( " +(j+1) + "/"+ lBuyVos.size()+") 추가됨 =======================================");
+				// count++;
+			}
+		}
+
+		// 1. 파일 객체 생성
+		File file = new File("/home/patikle/stock/log/logging2.txt");
+		FileWriter fw = null;
+		BufferedWriter writer = null;
+		try{
+			if (!file.exists()) {
+				file.createNewFile();
+			}
+			// 3. Buffer를 사용해서 File에 write할 수 있는 BufferedWriter 생성
+			fw = new FileWriter(file);
+			writer = new BufferedWriter(fw);
+			
+			for(int k = 0 ; k < tradeResultVos.size() ; k++){
+				StringBuilder sb = new StringBuilder();
+				TradeResultVo item = tradeResultVos.get(k);
+				sb.append(item.getSymbol()).append(","); // 종목
+				sb.append(item.isSuccess()).append(","); // 성공여부
+				sb.append(item.getRound()).append(","); // 추가매수 횟수
+				sb.append(item.getBuyAndSellPeriod()).append(","); //  예상수익율
+				sb.append(item.getFirstBuyDate()).append(","); // 매수일
+				sb.append(item.getFinalSellDate()).append(","); // 매도일
+
+				sb.append(item.getBuy1stDate()).append(","); // 1 차매수일
+				sb.append(item.getBuy1st()).append(","); // 1차 매수 금액
+				sb.append(item.getSell1stDate()).append(","); // 1차 매도일
+				sb.append(item.getSell1st()).append(","); // 1차 매도 금액
+
+				sb.append(item.getBuy2ndDate()).append(","); // 2차 매수일
+				sb.append(item.getBuy2nd()).append(","); // 2차 매수 금액
+				sb.append(item.getSell2ndDate()).append(","); // 2차 매도일
+				sb.append(item.getSell2nd()).append(","); // 2차 매도 금액
+
+				sb.append(item.getBuy3rdDate()).append(","); // 3차 매수일
+				sb.append(item.getBuy3rd()).append(","); // 3차 매수 금액
+				sb.append(item.getSell3rdDate()).append(","); // 3차 매도일
+				sb.append(item.getSell3rd()); // 3차 매도 금액
+				sb.append("\n");
+				writer.write(sb.toString());
+			}
+			writer.close();
+			fw.close();
+		}catch(Exception e){
+			System.out.println(e.getMessage());
+		}
+		// System.out.println(">>>>>>> 실행 된 전략 수: " + count);
+	} */
+
+
+
+}

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+	PUBLIC "-//mybatis.org/DTD Mapper 3.0//EN"
+	"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+	
+<mapper namespace="com.patikle.swing.contents.buy.BuyDao">
+    <select id="selectTbTickerCountBySymbol" parameterType="String" resultType="int">
+        SELECT COUNT(*) FROM `dbpatikle`.`tb_ticker` WHERE `symbol` = #{symbol}
+    </select>
+
+    <select id="selectTbBarsOneDayListBySymbol" parameterType="String" resultType="com.patikle.swing.contents.bars.BarsVo">
+        SELECT 
+            symbol,
+            DATE_FORMAT(STR_TO_DATE(`t`, '%Y-%m-%dT%H:%i:%sZ'), '%Y-%m-%d %H:%i') AS `t`,
+            o,
+            h,
+            l,
+            c,
+            v,
+            n,
+            vw
+        FROM `dbpatikle`.`tb_bars_1day` A WHERE symbol = #{symbol} ORDER BY t ASC
+    </select>
+	
+    <select id="selectTbBarsOneDayGreenList" resultType="com.patikle.swing.contents.buy.BuyVo">
+        SELECT 
+            t1.symbol,
+            t2.t AS t,
+            t2.float_shares,
+            t2.o,
+            t2.c,
+            t2.h,
+            t2.l,
+            t2.`ha_o`,
+            t2.`ha_c`,
+            t2.`ha_h`,
+            t2.`ha_l`,
+            t2.`volume`,
+            t2.market_cap,
+            t2.`buy` AS `buy1st`,
+            t2.`sell` AS `sell1st`,
+            ((t2.sell - t2.buy) / ((t2.buy + t2.sell) / 2)) * 100 AS percent
+        FROM(
+            SELECT 
+                A.symbol,
+                A.t,
+                MAX(STR_TO_DATE(A.t, '%Y-%m-%d %H:%i')) AS max_t,
+                A.o,
+                A.c,
+                A.h,
+                A.l,
+                B.float_shares,
+                A.o_ha AS `ha_o`,
+                A.c_ha AS `ha_c`,
+                A.h_ha AS `ha_h`,
+                A.l_ha AS `ha_l`,
+                A.v AS volume,
+                B.market_cap,
+                ROUND(A.prev_c_ha, 2) AS buy,
+                ROUND(A.c_ha, 2) AS sell
+            FROM `dbpatikle`.`tb_bars_1day_green` A
+            LEFT JOIN `dbpatikle`.`tb_ticker` B ON A.symbol = B.symbol
+            WHERE
+                A.c > 1 
+                AND 50000000 > B.float_shares
+                AND A.v > B.float_shares
+            GROUP BY symbol 
+        )t1 
+        INNER JOIN 
+        (
+            SELECT 
+                A.symbol,
+                A.t,
+                B.float_shares,
+                A.o,
+                A.c,
+                A.h,
+                A.l,
+                A.o_ha AS `ha_o`,
+                A.c_ha AS `ha_c`,
+                A.h_ha AS `ha_h`,
+                A.l_ha AS `ha_l`,
+                A.v AS volume,
+                B.market_cap,
+                ROUND(A.prev_c_ha, 2) AS buy,
+                ROUND(A.c_ha, 2) AS sell
+            FROM `dbpatikle`.`tb_bars_1day_green` A
+            LEFT JOIN `dbpatikle`.`tb_ticker` B ON A.symbol = B.symbol
+            WHERE
+                A.c > 1 
+                AND 50000000 > B.float_shares
+                AND A.v > B.float_shares
+        )t2 ON t1.symbol = t2.symbol AND t1.max_t = t2.t
+        WHERE 
+            ((t2.sell - t2.buy) / ((t2.sell + t2.buy) /2)) * 100 > 3
+            AND t2.float_shares > 0
+        ORDER BY t ASC
+    </select>
+
+    <select id="selectTbBarsOneDayGreenListWithoutVolumeSize" parameterType="String" resultType="com.patikle.swing.contents.buy.BuyVo">
+        SELECT 
+            A.symbol,
+            A.t,
+            B.float_shares,
+            A.o,
+            A.c,
+            A.h,
+            A.l,
+            A.o_ha AS `ha_o`,
+            A.c_ha AS `ha_c`,
+            A.h_ha AS `ha_h`,
+            A.l_ha AS `ha_l`,
+            A.v AS volume,
+            B.market_cap,
+            ROUND(A.prev_c_ha, 2) AS buy1st,
+            ROUND(A.c_ha, 2) AS sell1st,
+            ((c_ha - prev_c_ha) / ((c_ha + prev_c_ha) / 2)) * 100 AS percent
+        FROM `dbpatikle`.`tb_bars_1day_green` A
+        LEFT JOIN `dbpatikle`.`tb_ticker` B ON A.symbol = B.symbol
+        WHERE
+            A.c > 1 
+            AND 50000000 > B.float_shares
+            -- AND A.v > B.float_shares
+            AND ((c_ha - prev_c_ha) / ((c_ha + prev_c_ha) / 2)) * 100 > 3
+    </select>
+</mapper>

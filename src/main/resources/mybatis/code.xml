@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+	PUBLIC "-//mybatis.org/DTD Mapper 3.0//EN"
+	"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+	
+<mapper namespace="com.patikle.swing.contents.code.CodeDao">
+	<select id="selectCode" parameterType="com.patikle.swing.contents.code.CodeVo" resultType="com.patikle.swing.contents.code.CodeVo">
+		SELECT * FROM `dbpatikle`.`tb_keys` WHERE `key_name` = #{keyName}
+	</select>
+</mapper>
+

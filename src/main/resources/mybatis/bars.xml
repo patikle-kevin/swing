@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+	PUBLIC "-//mybatis.org/DTD Mapper 3.0//EN"
+	"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+	
+<mapper namespace="com.patikle.swing.contents.bars.BarsDao">
+
+	<insert id="insertBarsData" parameterType="java.util.Map">
+		INSERT IGNORE INTO `dbpatikle`.`tb_bars_1day`(`symbol`, `t`, `o`, `h`, `l`, `c`, `v`, `n`, `vw`)
+        VALUES
+        (
+            #{symbol},
+            #{t},
+            #{o},
+            #{h},
+            #{l},
+            #{c},
+            #{v},
+            #{n},
+            #{vw}
+        )
+	</insert>
+
+	<insert id="insertBarsDataBulk" parameterType="com.patikle.swing.contents.bars.BarsBulkVo">
+		INSERT IGNORE INTO `dbpatikle`.`tb_bars_1day`(`symbol`, `t`, `o`, `h`, `l`, `c`, `v`, `n`, `vw`)
+        VALUES
+        <foreach collection="list" index="index" item="map" separator=",">
+        (
+            #{symbol},
+            #{map.t},
+            #{map.o},
+            #{map.h},
+            #{map.l},
+            #{map.c},
+            #{map.v},
+            #{map.n},
+            #{map.vw}
+        )
+        </foreach>
+	</insert>
+
+    <delete id="deleteBarsData" parameterType="String">
+        DELETE FROM `dbpatikle`.`tb_bars_1day` WHERE `symbol` = #{symbol}
+    </delete>
+
+</mapper>
+
