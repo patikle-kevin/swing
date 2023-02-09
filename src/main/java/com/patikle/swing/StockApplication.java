@@ -1,24 +1,15 @@
 package com.patikle.swing;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLConnection;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 
 import javax.annotation.PostConstruct;
@@ -35,11 +26,8 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-import com.jayway.jsonpath.internal.Path;
 import com.patikle.swing.contents.bars.Bars;
-import com.patikle.swing.contents.buy.Buy;
 import com.patikle.swing.contents.buy.BuyMultiple;
-import com.patikle.swing.contents.buy.TradeRunnable;
 import com.patikle.swing.contents.greenbars.GreenBars;
 import com.patikle.swing.contents.split.SplitService;
 import com.patikle.swing.contents.trade.KIS;

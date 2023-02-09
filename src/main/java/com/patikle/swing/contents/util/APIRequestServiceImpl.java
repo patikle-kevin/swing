@@ -1,30 +1,28 @@
 package com.patikle.swing.contents.util;
 
-import java.net.URI;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
-
 
 import org.json.JSONObject;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.DefaultUriBuilderFactory;
-import org.springframework.web.util.UriBuilder;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import reactor.core.publisher.Mono;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+
 @Service
 public class APIRequestServiceImpl implements APIRequestService {
+
+    Logger logger = LoggerFactory.getLogger(APIRequestService.class);
 
     public <T> T get(String url, Map<String, String> headersMap, MultiValueMap<String, String> params,  Class<T> valueType){
         ExchangeStrategies exchangeStrategies = ExchangeStrategies.builder() .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(-1)).build(); 
@@ -53,12 +51,22 @@ public class APIRequestServiceImpl implements APIRequestService {
                 .uri(uriBuilder -> uriBuilder.queryParams(params).build())
                 .retrieve().bodyToMono(String.class);
         ;
-
-        // Mono<String> body = webClient.get().retrieve().bodyToMono(String.class);
         T t = null;
         try{
            t = new ObjectMapper().readValue(body.block(), valueType);
         }catch(JsonProcessingException e){
+            
+        }catch(Exception e){
+            try{
+                Thread.sleep(5000);
+                body = webClient.get().retrieve().bodyToMono(String.class);
+                try{
+                    t = new ObjectMapper().readValue(body.block(), valueType);
+                }catch(JsonProcessingException e2){
+                }
+            }catch(InterruptedException ex){
+                
+            }
         }
         return t;
     }
@@ -71,11 +79,22 @@ public class APIRequestServiceImpl implements APIRequestService {
         .exchangeStrategies(exchangeStrategies)
         .build();
         Mono<String> body = webClient.get().retrieve().bodyToMono(String.class);
-
         T t = null;
         try{
-            t = new ObjectMapper().readValue(body.block(), valueType);
+           t = new ObjectMapper().readValue(body.block(), valueType);
         }catch(JsonProcessingException e){
+            
+        }catch(Exception e){
+            try{
+                Thread.sleep(5000);
+                body = webClient.get().retrieve().bodyToMono(String.class);
+                try{
+                    t = new ObjectMapper().readValue(body.block(), valueType);
+                }catch(JsonProcessingException e2){
+                }
+            }catch(InterruptedException ex){
+                
+            }
         }
         return t;
     }
@@ -96,21 +115,17 @@ public class APIRequestServiceImpl implements APIRequestService {
         try{
            t = new ObjectMapper().readValue(body.block(), valueType);
         }catch(JsonProcessingException e){
-            System.out.println("==================================== JsonProcessingException ====================================");
         }catch(Exception e){
-            System.out.println("==================================== Exception e ====================================");
             try{
                 Thread.sleep(5000);
                 body = webClient.get().retrieve().bodyToMono(String.class);
                 try{
                     t = new ObjectMapper().readValue(body.block(), valueType);
                 }catch(JsonProcessingException e2){
-                    System.out.println("==================================== JsonProcessingException e2 ====================================");
                 }
             }catch(InterruptedException ex){
                 
             }
-            
         }
         return t;
     }
@@ -151,6 +166,18 @@ public class APIRequestServiceImpl implements APIRequestService {
         try{
            t = new ObjectMapper().readValue(body.block(), valueType);
         }catch(JsonProcessingException e){
+            
+        }catch(Exception e){
+            try{
+                Thread.sleep(5000);
+                body = webClient.get().retrieve().bodyToMono(String.class);
+                try{
+                    t = new ObjectMapper().readValue(body.block(), valueType);
+                }catch(JsonProcessingException e2){
+                }
+            }catch(InterruptedException ex){
+                
+            }
         }
         return t;
     }

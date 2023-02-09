@@ -1,17 +1,10 @@
 package com.patikle.swing.contents.trade;
 
 import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.HashMap;
-import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,8 +27,7 @@ public class KIS {
 
     public void run(){
         String uri = URL_BASE + "/uapi/overseas-stock/v1/trading/inquire-balance";
-        String tr_id = "VTTT3001R";
-        
+        // String tr_id = "VTTT3001R";
         // Map<String, String> map = new HashMap<>();
         // map.put("authorization","Bearer " + ACCESS_TOKEN);
         // map.put("appkey", APP_KEY);

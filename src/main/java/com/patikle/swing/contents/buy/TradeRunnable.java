@@ -378,7 +378,7 @@ public class TradeRunnable implements Runnable{
 	
 	private boolean tryFirstTradeJob(TradeResultVo tradeResultVo, BarsVo minBar, BuyVo strategyVo, double twentyFive, double fifty, double previousProceeds){
 		boolean b = false;
-		int count = tradeResultVo.getBuy1stCount() + tradeResultVo.getBuy2ndCount() + tradeResultVo.getBuy3rdCount();
+		// int count = tradeResultVo.getBuy1stCount() + tradeResultVo.getBuy2ndCount() + tradeResultVo.getBuy3rdCount();
 
 		// 분봉의 OPEN 가격이 매도가보다 높은경우 무조건 매도 됐을것
 		if(minBar.getO().doubleValue() >= strategyVo.getSell1st().doubleValue()){

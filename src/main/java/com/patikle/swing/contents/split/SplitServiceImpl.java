@@ -34,8 +34,7 @@ public class SplitServiceImpl implements SplitService{
     @Autowired
     BuyService buyService;
 
-
-    
+    @SuppressWarnings("unchecked")
     public void updateStockSplit(String from, String to){
 
         CodeVo vo = new CodeVo("financialmodelingprep.apikey");
