@@ -79,7 +79,6 @@ public class Bars {
                     break;
                 }
             }
-            System.out.println(vo.getSymbol() + " insertBarsDataBulk END");
         }
     }
 

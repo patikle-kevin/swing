@@ -21,13 +21,11 @@ public class GreenBars {
     private SqlSession sqlSession;
 
     public void run(){
-        System.out.println(sqlSession);
 		TickerVo tickerVo = new TickerVo();
 		tickerVo.setFloatShares(50000000);
         List<TickerVo> list = sqlSession.getMapper(GreenBarsDao.class).selectTickerListByFloatShares(tickerVo);
 		for(int i = 0 ; i < list.size() ; i++){
 			collectGreenBars(list.get(i).getSymbol());
-            System.out.println(list.get(i).getSymbol() + " collectGreenBars END");
 		}
     }
     public void run(String symbol){

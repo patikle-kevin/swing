@@ -90,12 +90,8 @@ public class StockApplication {
 		//greenBars.run("UXIN");
 		
 		splitService.updateStockSplit(start, end);
-        System.out.println("updateStockSplit END");
-
         bars.run(timeframe, adjustment, start, end, limit);
-        System.out.println("bars.run END");
         greenBars.run();
-        System.out.println("greenBars END");
 
         // buyMultiple.run();
 
